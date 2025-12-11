@@ -9,7 +9,7 @@ st.markdown("---")
 
 # --- FUNÇÕES DE LIMPEZA ---
 def clean_currency_planilha(val):
-    """Limpa valores da Planilha (formato geralmente float ou texto simples)"""
+    """Limpa valores da Planilha (formato float ou texto simples)"""
     if pd.isna(val) or val == '':
         return 0.0
     val_str = str(val).strip()
@@ -22,12 +22,12 @@ def clean_currency_planilha(val):
             return 0.0
 
 def clean_currency_balancete(val):
-    """Limpa valores do Balancete (formato 1.000,00D ou C)"""
+    """Limpa valores do Balancete (formato brasileiro 1.000,00)"""
     if pd.isna(val) or val == '':
         return 0.0
-    # Remove letras de Débito/Crédito e espaços
+    # Remove 'D', 'C' e espaços
     val_str = str(val).upper().replace('D', '').replace('C', '').strip()
-    # Converte formato brasileiro (remove ponto de milhar, troca vírgula por ponto)
+    # Remove ponto de milhar e troca vírgula decimal por ponto
     val_str = val_str.replace('.', '').replace(',', '.')
     try:
         return float(val_str)
@@ -37,13 +37,11 @@ def clean_currency_balancete(val):
 # --- BARRA LATERAL (UPLOADS) ---
 st.sidebar.header("📂 Upload de Arquivos")
 
-# 1. Upload do Arquivo Mestre de Notas (Excel com várias abas)
 uploaded_planilha_master = st.sidebar.file_uploader(
     "1. Arquivo de Notas (Excel .xlsx com abas mensais)", 
     type=['xlsx']
 )
 
-# 2. Upload do Balancete (Arquivo do mês específico)
 uploaded_balancete = st.sidebar.file_uploader(
     "2. Arquivo do Balancete (CSV ou Excel)", 
     type=['csv', 'xlsx']
@@ -52,43 +50,41 @@ uploaded_balancete = st.sidebar.file_uploader(
 # --- LÓGICA PRINCIPAL ---
 if uploaded_planilha_master and uploaded_balancete:
     try:
-        # Carrega o arquivo Excel para ler os nomes das abas (meses)
+        # Carrega nomes das abas
         xls_file = pd.ExcelFile(uploaded_planilha_master)
         sheet_names = xls_file.sheet_names
         
-        # Seletor de Mês (baseado nas abas do Excel)
         st.subheader("🗓️ Seleção do Mês")
         selected_sheet = st.selectbox("Escolha a aba (mês) que deseja analisar:", sheet_names)
         
         if st.button("Iniciar Análise"):
-            with st.spinner(f'Lendo aba "{selected_sheet}" e processando dados...'):
+            with st.spinner(f'Processando aba "{selected_sheet}"...'):
                 
-                # --- 1. PROCESSAR PLANILHA DE NOTAS (ABA SELECIONADA) ---
-                # Lê a aba específica sem cabeçalho (header=None)
+                # ==========================================
+                # 1. PROCESSAR PLANILHA DE NOTAS (ABA SELECIONADA)
+                # ==========================================
                 df_p_raw = pd.read_excel(uploaded_planilha_master, sheet_name=selected_sheet, header=None, dtype=str)
                 
                 planilha_items = []
-                # Itera sobre as linhas procurando valores na Coluna B (índice 1)
                 for idx, row in df_p_raw.iterrows():
-                    # Garante que a linha tem pelo menos 2 colunas
                     if len(row) < 2: continue
                     
-                    desc = row[0] # Coluna A: Descrição/Nome
-                    val_raw = row[1] # Coluna B: Valor
-                    
+                    # Coluna A (0) = Nome, Coluna B (1) = Valor
+                    desc = row[0]
+                    val_raw = row[1]
                     val = clean_currency_planilha(val_raw)
                     
-                    # Filtros: Valor > 0 e ignorar linhas de "TOTAL"
                     if val > 0 and "TOTAL" not in str(desc).upper():
                         planilha_items.append({
-                            "Descrição Planilha": str(desc) if pd.notna(desc) else "Sem Descrição",
-                            "Valor Planilha": val,
-                            "Index Original": idx
+                            "Descrição Planilha": str(desc).strip() if pd.notna(desc) else "Sem Descrição",
+                            "Valor Planilha": val
                         })
                 
                 df_planilha = pd.DataFrame(planilha_items)
 
-                # --- 2. PROCESSAR BALANCETE ---
+                # ==========================================
+                # 2. PROCESSAR BALANCETE (BUSCA DINÂMICA)
+                # ==========================================
                 try:
                     df_b_raw = pd.read_csv(uploaded_balancete, header=None, dtype=str)
                 except:
@@ -96,31 +92,60 @@ if uploaded_planilha_master and uploaded_balancete:
                     df_b_raw = pd.read_excel(uploaded_balancete, header=None, dtype=str)
 
                 balancete_items = []
+                debito_col_idx = None
+                nome_col_idx = None # Vamos tentar achar onde fica o nome da conta também
+
+                # 2.1 Identificar onde está a coluna "DÉBITO"
+                # O usuário disse que está na LINHA 3 (índice 2)
+                if len(df_b_raw) > 2:
+                    header_row = df_b_raw.iloc[2] # Linha 3
+                    
+                    for i, col_val in enumerate(header_row):
+                        col_text = str(col_val).upper().strip()
+                        if "DÉBITO" in col_text or "DEBITO" in col_text:
+                            debito_col_idx = i
+                        # Geralmente a coluna "NOME" ou "DESCRIÇÃO" vem antes
+                        if "NOME" in col_text or "CONTA" in col_text or "DESCRIÇÃO" in col_text:
+                            if nome_col_idx is None: # Pega a primeira que achar
+                                nome_col_idx = i
                 
-                # --- CORREÇÃO: COLUNA O (Índice 14) ---
-                # Definindo índice 14 como alvo principal
-                target_col_idx = 14 
+                # Fallback se não achar o cabeçalho (mas deve achar com sua instrução)
+                if debito_col_idx is None:
+                    st.warning("⚠️ Não achei a coluna escrito 'DÉBITO' na linha 3. Tentando a coluna O (14) por padrão.")
+                    debito_col_idx = 14
+                
+                # Se não achou coluna de nome, chuta coluna C (2) ou F (5)
+                possible_name_cols = [2, 5]
+                if nome_col_idx: possible_name_cols.insert(0, nome_col_idx)
+
+                # 2.2 Extrair valores (começam na Linha 4 -> índice 3)
+                start_row = 3 # Linha 4
                 
                 for idx, row in df_b_raw.iterrows():
-                    if len(row) > target_col_idx:
-                        val_raw = row[target_col_idx]
+                    if idx < start_row: continue # Pula cabeçalho
+                    
+                    if len(row) > debito_col_idx:
+                        val_raw = row[debito_col_idx]
                         val = clean_currency_balancete(val_raw)
                         
                         if val > 0:
-                            # Tenta achar a descrição (geralmente col C=2 ou F=5 no balancete)
-                            desc_cand = str(row[2]) if len(row) > 2 and pd.notna(row[2]) else ""
-                            if not desc_cand and len(row) > 5:
-                                desc_cand = str(row[5])
+                            # Tenta pegar descrição
+                            desc = "Sem Descrição"
+                            for name_idx in possible_name_cols:
+                                if len(row) > name_idx and pd.notna(row[name_idx]):
+                                    desc = str(row[name_idx]).strip()
+                                    if desc: break
                             
                             balancete_items.append({
-                                "Descrição Balancete": desc_cand if desc_cand else "Sem Descrição",
-                                "Valor Balancete": val,
-                                "Index Original": idx
+                                "Descrição Balancete": desc,
+                                "Valor Balancete": val
                             })
-                
+
                 df_balancete = pd.DataFrame(balancete_items)
 
-                # --- 3. LÓGICA DE COMPARAÇÃO (MATCHING) ---
+                # ==========================================
+                # 3. COMPARAÇÃO (MATCHING)
+                # ==========================================
                 matched_rows = []
                 unmatched_planilha = []
                 
@@ -131,15 +156,15 @@ if uploaded_planilha_master and uploaded_balancete:
                         val_p = row_p['Valor Planilha']
                         desc_p = row_p['Descrição Planilha']
                         
-                        # Busca por valor exato (com pequena tolerância de centavos)
-                        matches = df_bal_pool[np.isclose(df_bal_pool['Valor Balancete'], val_p, atol=0.01)]
+                        # 1. Busca por valor exato (com tolerância de 0.02 centavos para arredondamentos)
+                        matches = df_bal_pool[np.isclose(df_bal_pool['Valor Balancete'], val_p, atol=0.02)]
                         
                         match_found = None
                         
                         if len(matches) == 1:
                             match_found = matches.iloc[0]
                         elif len(matches) > 1:
-                            # Critério de desempate: Similaridade de nome
+                            # 2. Desempate por Nome
                             best_score = -1
                             p_words = set(desc_p.lower().split())
                             
@@ -157,50 +182,40 @@ if uploaded_planilha_master and uploaded_balancete:
                                 "Descrição (Balancete)": match_found['Descrição Balancete'],
                                 "Status": "✅ Conferido"
                             })
-                            # Remove do pool
                             df_bal_pool = df_bal_pool.drop(match_found.name)
                         else:
                             unmatched_planilha.append({
                                 "Descrição (Planilha)": desc_p,
                                 "Valor": val_p,
-                                "Descrição (Balancete)": "---",
                                 "Status": "❌ Não encontrado"
                             })
 
-                # Sobras do Balancete
-                extra_balancete = []
-                for idx, row_b in df_bal_pool.iterrows():
-                    extra_balancete.append({
-                        "Descrição (Planilha)": "---",
-                        "Valor": row_b['Valor Balancete'],
-                        "Descrição (Balancete)": row_b['Descrição Balancete'],
-                        "Status": "⚠️ Extra Balancete"
-                    })
+                # Sobras
+                extra_balancete = df_bal_pool.rename(columns={
+                    "Descrição Balancete": "Descrição", 
+                    "Valor Balancete": "Valor"
+                })
 
-                # --- 4. EXIBIÇÃO ---
-                df_conferidos = pd.DataFrame(matched_rows)
-                df_divergentes = pd.DataFrame(unmatched_planilha)
-                df_extras = pd.DataFrame(extra_balancete)
-
-                st.success("Processamento Concluído!")
-
+                # ==========================================
+                # 4. EXIBIÇÃO
+                # ==========================================
+                st.success(f"Análise Finalizada! (Coluna DÉBITO detectada no índice {debito_col_idx})")
+                
                 c1, c2, c3 = st.columns(3)
-                c1.metric("Conferidos", len(df_conferidos))
-                c2.metric("Não achados no Balancete", len(df_divergentes))
-                c3.metric("Sobras no Balancete", len(df_extras))
+                c1.metric("Conferidos", len(matched_rows))
+                c2.metric("Não encontrados (Planilha)", len(unmatched_planilha))
+                c3.metric("Não encontrados (Balancete)", len(extra_balancete))
 
                 tab1, tab2, tab3 = st.tabs(["✅ Conferidos", "❌ Diferenças (Planilha)", "⚠️ Diferenças (Balancete)"])
 
                 with tab1:
-                    st.dataframe(df_conferidos, use_container_width=True)
+                    st.dataframe(pd.DataFrame(matched_rows), use_container_width=True)
                 with tab2:
-                    st.write("Valores da planilha que **não** bateram com a Coluna O do Balancete:")
-                    st.dataframe(df_divergentes, use_container_width=True)
+                    st.dataframe(pd.DataFrame(unmatched_planilha), use_container_width=True)
                 with tab3:
-                    st.write("Valores na Coluna O do Balancete que **sobraram**:")
-                    st.dataframe(df_extras, use_container_width=True)
+                    st.dataframe(extra_balancete, use_container_width=True)
 
     except Exception as e:
-        st.error(f"Erro ao processar arquivo: {e}")
+        st.error(f"Erro durante o processamento: {e}")
 else:
-    st.info("👆 Faça o upload dos arquivos na barra lateral para começar.")
+    st.info("👆 Faça o upload dos arquivos para começar.")
