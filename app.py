@@ -25,7 +25,9 @@ def clean_currency_balancete(val):
     """Limpa valores do Balancete (formato 1.000,00D ou C)"""
     if pd.isna(val) or val == '':
         return 0.0
+    # Remove letras de Débito/Crédito e espaços
     val_str = str(val).upper().replace('D', '').replace('C', '').strip()
+    # Converte formato brasileiro (remove ponto de milhar, troca vírgula por ponto)
     val_str = val_str.replace('.', '').replace(',', '.')
     try:
         return float(val_str)
@@ -62,7 +64,7 @@ if uploaded_planilha_master and uploaded_balancete:
             with st.spinner(f'Lendo aba "{selected_sheet}" e processando dados...'):
                 
                 # --- 1. PROCESSAR PLANILHA DE NOTAS (ABA SELECIONADA) ---
-                # Lê a aba específica sem cabeçalho (header=None) para pegar posição fixa
+                # Lê a aba específica sem cabeçalho (header=None)
                 df_p_raw = pd.read_excel(uploaded_planilha_master, sheet_name=selected_sheet, header=None, dtype=str)
                 
                 planilha_items = []
@@ -94,28 +96,27 @@ if uploaded_planilha_master and uploaded_balancete:
                     df_b_raw = pd.read_excel(uploaded_balancete, header=None, dtype=str)
 
                 balancete_items = []
-                # Procura valores na Coluna Q (índice 16)
-                # Adicionamos colunas vizinhas caso o arquivo varie um pouco
-                target_indices = [16, 17, 14] 
+                
+                # --- CORREÇÃO: COLUNA O (Índice 14) ---
+                # Definindo índice 14 como alvo principal
+                target_col_idx = 14 
                 
                 for idx, row in df_b_raw.iterrows():
-                    for col_idx in target_indices:
-                        if len(row) > col_idx:
-                            val_raw = row[col_idx]
-                            val = clean_currency_balancete(val_raw)
+                    if len(row) > target_col_idx:
+                        val_raw = row[target_col_idx]
+                        val = clean_currency_balancete(val_raw)
+                        
+                        if val > 0:
+                            # Tenta achar a descrição (geralmente col C=2 ou F=5 no balancete)
+                            desc_cand = str(row[2]) if len(row) > 2 and pd.notna(row[2]) else ""
+                            if not desc_cand and len(row) > 5:
+                                desc_cand = str(row[5])
                             
-                            if val > 0:
-                                # Tenta achar a descrição (geralmente col C=2 ou F=5)
-                                desc_cand = str(row[2]) if len(row) > 2 and pd.notna(row[2]) else ""
-                                if not desc_cand and len(row) > 5:
-                                    desc_cand = str(row[5])
-                                
-                                balancete_items.append({
-                                    "Descrição Balancete": desc_cand if desc_cand else "Sem Descrição",
-                                    "Valor Balancete": val,
-                                    "Index Original": idx
-                                })
-                                break
+                            balancete_items.append({
+                                "Descrição Balancete": desc_cand if desc_cand else "Sem Descrição",
+                                "Valor Balancete": val,
+                                "Index Original": idx
+                            })
                 
                 df_balancete = pd.DataFrame(balancete_items)
 
@@ -156,6 +157,7 @@ if uploaded_planilha_master and uploaded_balancete:
                                 "Descrição (Balancete)": match_found['Descrição Balancete'],
                                 "Status": "✅ Conferido"
                             })
+                            # Remove do pool
                             df_bal_pool = df_bal_pool.drop(match_found.name)
                         else:
                             unmatched_planilha.append({
@@ -175,31 +177,30 @@ if uploaded_planilha_master and uploaded_balancete:
                         "Status": "⚠️ Extra Balancete"
                     })
 
-                # --- 4. RESULTADOS ---
+                # --- 4. EXIBIÇÃO ---
                 df_conferidos = pd.DataFrame(matched_rows)
                 df_divergentes = pd.DataFrame(unmatched_planilha)
                 df_extras = pd.DataFrame(extra_balancete)
 
                 st.success("Processamento Concluído!")
 
-                # Métricas
                 c1, c2, c3 = st.columns(3)
-                c1.metric("Conferidos (Sucesso)", len(df_conferidos))
-                c2.metric("Faltando no Balancete", len(df_divergentes))
-                c3.metric("Sobrando no Balancete", len(df_extras))
+                c1.metric("Conferidos", len(df_conferidos))
+                c2.metric("Não achados no Balancete", len(df_divergentes))
+                c3.metric("Sobras no Balancete", len(df_extras))
 
                 tab1, tab2, tab3 = st.tabs(["✅ Conferidos", "❌ Diferenças (Planilha)", "⚠️ Diferenças (Balancete)"])
 
                 with tab1:
                     st.dataframe(df_conferidos, use_container_width=True)
                 with tab2:
-                    st.write("Estes valores estão na planilha mensal mas o robô não achou no balancete:")
+                    st.write("Valores da planilha que **não** bateram com a Coluna O do Balancete:")
                     st.dataframe(df_divergentes, use_container_width=True)
                 with tab3:
-                    st.write("Valores encontrados na coluna Q do balancete que não foram 'riscados':")
+                    st.write("Valores na Coluna O do Balancete que **sobraram**:")
                     st.dataframe(df_extras, use_container_width=True)
 
     except Exception as e:
-        st.error(f"Erro ao ler o arquivo Excel: {e}")
+        st.error(f"Erro ao processar arquivo: {e}")
 else:
-    st.info("👆 Por favor, faça o upload do arquivo Excel das Notas e do Balancete na barra lateral.")
+    st.info("👆 Faça o upload dos arquivos na barra lateral para começar.")
