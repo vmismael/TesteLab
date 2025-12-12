@@ -1,13 +1,13 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px  # Nova biblioteca para gráficos bonitos
+import plotly.express as px
 
 # ---------------------------------------------------------
 # CONFIGURAÇÃO GERAL DA PÁGINA
 # ---------------------------------------------------------
 st.set_page_config(page_title="Dashboard Integrado", layout="wide")
 
-# Título Principal (aparece em todas as páginas)
+# Título Principal
 st.title("📊 Dashboard Integrado de Gestão")
 
 # ---------------------------------------------------------
@@ -44,34 +44,53 @@ if pagina_selecionada == "📋 Análise de Coletas":
                 # Agrupa por Colaborador e conta O.S. únicas
                 resumo = df_coletas.groupby('Usuário Nome')['O.S.'].nunique().reset_index()
                 resumo.columns = ['Colaborador', 'Qtd. Pacientes Atendidos']
-                resumo = resumo.sort_values(by='Qtd. Pacientes Atendidos', ascending=True) # Ascending true para o gráfico horizontal ficar na ordem certa
+                # Ordenação para o gráfico (crescente)
+                resumo_grafico = resumo.sort_values(by='Qtd. Pacientes Atendidos', ascending=True)
+                # Ordenação para a tabela (decrescente)
+                resumo_tabela = resumo.sort_values(by='Qtd. Pacientes Atendidos', ascending=False).reset_index(drop=True)
 
-                # Exibição do Resumo
                 st.subheader("Resumo de Atendimentos")
                 col1, col2 = st.columns([1, 2])
                 
                 with col1:
-                    # Ordena do maior para o menor para a tabela
-                    resumo_tabela = resumo.sort_values(by='Qtd. Pacientes Atendidos', ascending=False).reset_index(drop=True)
-                    st.dataframe(resumo_tabela, use_container_width=True)
+                    st.write("**Tabela de Dados:**")
+                    # --- AJUSTES NA TABELA ---
+                    st.dataframe(
+                        resumo_tabela,
+                        use_container_width=True,
+                        hide_index=True,   # Remove o número da esquerda
+                        height=500,        # Aumenta a altura da tabela
+                        column_config={
+                            "Qtd. Pacientes Atendidos": st.column_config.NumberColumn(
+                                "Qtd. Pacientes",
+                                help="Número total de pacientes únicos atendidos",
+                                format="%d" # Garante número inteiro
+                            )
+                        }
+                    )
                     
                 with col2:
-                    # --- MUDANÇA AQUI: GRÁFICO PLOTLY ---
+                    st.write("**Gráfico Visual:**")
+                    # --- AJUSTES NO GRÁFICO ---
                     fig = px.bar(
-                        resumo, 
+                        resumo_grafico, 
                         x='Qtd. Pacientes Atendidos', 
                         y='Colaborador', 
-                        orientation='h', # Barras horizontais
-                        text_auto=True,  # Mostra o número na barra
+                        orientation='h', 
+                        text_auto=True,
                         title="Pacientes Atendidos por Colaborador"
                     )
-                    # Ajustes visuais para limpar o gráfico
+                    
                     fig.update_layout(
                         xaxis_title="Quantidade de Pacientes",
                         yaxis_title="Colaborador",
                         showlegend=False,
-                        height=400
+                        height=500, # Aumentei a altura do gráfico também
+                        margin=dict(r=50) # Margem direita extra para o número não cortar
                     )
+                    # Garante que o texto fique visível mesmo se a barra for cheia
+                    fig.update_traces(textposition='outside', cliponaxis=False)
+                    
                     st.plotly_chart(fig, use_container_width=True)
 
                 st.markdown("---")
@@ -80,25 +99,26 @@ if pagina_selecionada == "📋 Análise de Coletas":
                 st.subheader("🔎 Detalhes por Colaborador")
                 st.info("Selecione um colaborador abaixo para ver a lista detalhada.")
 
-                # Pega a lista ordenada da tabela para o selectbox ficar na ordem correta
                 lista_colaboradores = resumo_tabela['Colaborador'].unique()
                 colaborador_selecionado = st.selectbox("Escolha o Colaborador:", lista_colaboradores)
 
                 if colaborador_selecionado:
                     df_filtrado = df_coletas[df_coletas['Usuário Nome'] == colaborador_selecionado].copy()
                     
-                    # Colunas de interesse
                     colunas_detalhe = ['Data da Operação', 'O.S.', 'Paciente', 'Paciente Nome', 'Detalhe Descrição']
                     cols_existentes = [c for c in colunas_detalhe if c in df_filtrado.columns]
                     df_detalhe_final = df_filtrado[cols_existentes]
                     
-                    # Remove duplicatas de O.S.
                     df_detalhe_unico = df_detalhe_final.drop_duplicates(subset=['O.S.'])
 
                     st.write(f"**Pacientes atendidos por: {colaborador_selecionado}**")
-                    st.dataframe(df_detalhe_unico, use_container_width=True)
+                    # Tabela de detalhes também sem index e maior
+                    st.dataframe(
+                        df_detalhe_unico, 
+                        use_container_width=True,
+                        hide_index=True
+                    )
                     
-                    # Botão de Download
                     csv = df_detalhe_unico.to_csv(index=False).encode('utf-8')
                     st.download_button(
                         label="📥 Baixar detalhes (CSV)",
@@ -124,12 +144,10 @@ elif pagina_selecionada == "⚠️ Mapeamento de Riscos":
     Códigos considerados: `2A`, `3A`, `4A`, `5A`, `3B`, `4B`, `5B`, `5C`.
     """)
 
-    # Upload do Arquivo Excel/CSV
     uploaded_file_riscos = st.file_uploader("📂 Carregue seu arquivo Excel ou CSV de Riscos aqui", type=["xlsx", "csv"], key="upload_riscos")
 
     if uploaded_file_riscos:
         try:
-            # Verifica a extensão do arquivo
             is_csv = uploaded_file_riscos.name.lower().endswith('.csv')
             
             if is_csv:
@@ -138,24 +156,20 @@ elif pagina_selecionada == "⚠️ Mapeamento de Riscos":
                 xl = pd.ExcelFile(uploaded_file_riscos)
                 sheet_names = [s for s in xl.sheet_names if "Legenda" not in s]
             
-            # Filtros na Sidebar
             st.sidebar.header("Filtros (Riscos)")
             selected_sheet = st.sidebar.selectbox("Selecione o Setor (Aba):", sheet_names)
             
             months = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ']
             selected_month = st.sidebar.selectbox("Selecione o Mês:", months)
             
-            # Botão para processar
             if st.sidebar.button("🔍 Buscar Riscos", key="btn_buscar_riscos"):
                 
-                # Leitura do arquivo
                 if is_csv:
                     uploaded_file_riscos.seek(0) 
                     df_riscos = pd.read_csv(uploaded_file_riscos, header=None, sep=';', encoding='latin1')
                 else:
                     df_riscos = pd.read_excel(uploaded_file_riscos, sheet_name=selected_sheet, header=None)
                 
-                # Lógica de Riscos
                 target_risks = ['2A', '3A', '4A', '5A', '3B', '4B', '5B', '5C']
                 
                 month_idx = months.index(selected_month)
@@ -188,7 +202,8 @@ elif pagina_selecionada == "⚠️ Mapeamento de Riscos":
                 if results:
                     st.success(f"Foram encontrados {len(results)} riscos com gravidade Alta/Muito Alta em {selected_sheet} no mês de {selected_month}.")
                     df_results = pd.DataFrame(results)
-                    st.table(df_results)
+                    # Tabela de resultados de riscos também ajustada
+                    st.dataframe(df_results, use_container_width=True, hide_index=True)
                 else:
                     st.info(f"Nenhum risco alto ou muito alto encontrado em {selected_sheet} para {selected_month}.")
                     
