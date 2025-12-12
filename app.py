@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import plotly.express as px  # Nova biblioteca para gráficos bonitos
 
 # ---------------------------------------------------------
 # CONFIGURAÇÃO GERAL DA PÁGINA
@@ -35,27 +36,43 @@ if pagina_selecionada == "📋 Análise de Coletas":
             try:
                 df_coletas = pd.read_csv(uploaded_file_coletas, sep=";", encoding='utf-8')
             except UnicodeDecodeError:
-                # Se falhar, reinicia o ponteiro do arquivo e tenta latin1
                 uploaded_file_coletas.seek(0)
                 df_coletas = pd.read_csv(uploaded_file_coletas, sep=";", encoding='latin1')
             
             # Lógica de Contagem
-            # Verifica se as colunas necessárias existem
             if 'Usuário Nome' in df_coletas.columns and 'O.S.' in df_coletas.columns:
                 # Agrupa por Colaborador e conta O.S. únicas
                 resumo = df_coletas.groupby('Usuário Nome')['O.S.'].nunique().reset_index()
                 resumo.columns = ['Colaborador', 'Qtd. Pacientes Atendidos']
-                resumo = resumo.sort_values(by='Qtd. Pacientes Atendidos', ascending=False).reset_index(drop=True)
+                resumo = resumo.sort_values(by='Qtd. Pacientes Atendidos', ascending=True) # Ascending true para o gráfico horizontal ficar na ordem certa
 
                 # Exibição do Resumo
                 st.subheader("Resumo de Atendimentos")
                 col1, col2 = st.columns([1, 2])
                 
                 with col1:
-                    st.dataframe(resumo, use_container_width=True)
+                    # Ordena do maior para o menor para a tabela
+                    resumo_tabela = resumo.sort_values(by='Qtd. Pacientes Atendidos', ascending=False).reset_index(drop=True)
+                    st.dataframe(resumo_tabela, use_container_width=True)
                     
                 with col2:
-                    st.bar_chart(resumo.set_index('Colaborador'))
+                    # --- MUDANÇA AQUI: GRÁFICO PLOTLY ---
+                    fig = px.bar(
+                        resumo, 
+                        x='Qtd. Pacientes Atendidos', 
+                        y='Colaborador', 
+                        orientation='h', # Barras horizontais
+                        text_auto=True,  # Mostra o número na barra
+                        title="Pacientes Atendidos por Colaborador"
+                    )
+                    # Ajustes visuais para limpar o gráfico
+                    fig.update_layout(
+                        xaxis_title="Quantidade de Pacientes",
+                        yaxis_title="Colaborador",
+                        showlegend=False,
+                        height=400
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
 
                 st.markdown("---")
 
@@ -63,7 +80,8 @@ if pagina_selecionada == "📋 Análise de Coletas":
                 st.subheader("🔎 Detalhes por Colaborador")
                 st.info("Selecione um colaborador abaixo para ver a lista detalhada.")
 
-                lista_colaboradores = resumo['Colaborador'].unique()
+                # Pega a lista ordenada da tabela para o selectbox ficar na ordem correta
+                lista_colaboradores = resumo_tabela['Colaborador'].unique()
                 colaborador_selecionado = st.selectbox("Escolha o Colaborador:", lista_colaboradores)
 
                 if colaborador_selecionado:
@@ -74,7 +92,7 @@ if pagina_selecionada == "📋 Análise de Coletas":
                     cols_existentes = [c for c in colunas_detalhe if c in df_filtrado.columns]
                     df_detalhe_final = df_filtrado[cols_existentes]
                     
-                    # Remove duplicatas de O.S. para visualização limpa
+                    # Remove duplicatas de O.S.
                     df_detalhe_unico = df_detalhe_final.drop_duplicates(subset=['O.S.'])
 
                     st.write(f"**Pacientes atendidos por: {colaborador_selecionado}**")
@@ -120,10 +138,8 @@ elif pagina_selecionada == "⚠️ Mapeamento de Riscos":
                 xl = pd.ExcelFile(uploaded_file_riscos)
                 sheet_names = [s for s in xl.sheet_names if "Legenda" not in s]
             
-            # Filtros na Sidebar (agora específicos desta página, mas exibidos na barra lateral)
+            # Filtros na Sidebar
             st.sidebar.header("Filtros (Riscos)")
-            
-            # Precisamos verificar se estamos na página correta para não bugar a sidebar ao trocar de página
             selected_sheet = st.sidebar.selectbox("Selecione o Setor (Aba):", sheet_names)
             
             months = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ']
@@ -134,22 +150,20 @@ elif pagina_selecionada == "⚠️ Mapeamento de Riscos":
                 
                 # Leitura do arquivo
                 if is_csv:
-                    uploaded_file_riscos.seek(0) # Garante leitura do inicio
+                    uploaded_file_riscos.seek(0) 
                     df_riscos = pd.read_csv(uploaded_file_riscos, header=None, sep=';', encoding='latin1')
                 else:
                     df_riscos = pd.read_excel(uploaded_file_riscos, sheet_name=selected_sheet, header=None)
                 
-                # Lista de riscos alvo
+                # Lógica de Riscos
                 target_risks = ['2A', '3A', '4A', '5A', '3B', '4B', '5B', '5C']
                 
-                # Calcular índices das colunas
                 month_idx = months.index(selected_month)
                 content_col_index = 8 + (month_idx * 2)
                 risk_col_index = content_col_index + 1
                 
                 results = []
                 
-                # Iterar pelas linhas
                 for index, row in df_riscos.iterrows():
                     first_col = str(row[0])
                     if pd.isna(row[0]) or first_col.strip() in [
@@ -171,7 +185,6 @@ elif pagina_selecionada == "⚠️ Mapeamento de Riscos":
                                 "Classificação": risk_value
                             })
                 
-                # Exibir Resultados
                 if results:
                     st.success(f"Foram encontrados {len(results)} riscos com gravidade Alta/Muito Alta em {selected_sheet} no mês de {selected_month}.")
                     df_results = pd.DataFrame(results)
