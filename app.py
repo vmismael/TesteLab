@@ -169,4 +169,195 @@ if pagina_selecionada == "📋 Análise de Coletas":
                     
                     df_detalhe_unico = df_detalhe_final.drop_duplicates(subset=['O.S.'])
 
-                    st.write(f"**Pacientes atendidos por: {
+                    st.write(f"**Pacientes atendidos por: {colaborador_selecionado}**")
+                    st.dataframe(
+                        df_detalhe_unico, 
+                        use_container_width=True,
+                        hide_index=True
+                    )
+                    
+                    csv = df_detalhe_unico.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="📥 Baixar detalhes (CSV)",
+                        data=csv,
+                        file_name=f'detalhes_{colaborador_selecionado}.csv',
+                        mime='text/csv',
+                    )
+            else:
+                st.error("O arquivo carregado não possui as colunas 'Usuário Nome' ou 'O.S.'. Verifique se o arquivo está correto.")
+
+        except Exception as e:
+            st.error(f"Ocorreu um erro ao processar o arquivo de coletas: {e}")
+    else:
+        st.info("Por favor, carregue o arquivo CSV de coletas para visualizar os dados.")
+
+# =========================================================
+# PÁGINA 2: MAPEAMENTO DE RISCOS
+# =========================================================
+elif pagina_selecionada == "⚠️ Mapeamento de Riscos":
+    st.header("Análise de Riscos Institucionais - Alta e Muito Alta Gravidade")
+    st.markdown("""
+    Esta ferramenta analisa o arquivo de Mapeamento de Riscos (Excel ou CSV) e filtra eventos classificados como **Alto** ou **Muito Alto**.
+    Códigos considerados: `2A`, `3A`, `4A`, `5A`, `3B`, `4B`, `5B`, `5C`.
+    """)
+
+    uploaded_file_riscos = st.file_uploader("📂 Carregue seu arquivo Excel ou CSV de Riscos aqui", type=["xlsx", "csv"], key="upload_riscos")
+
+    if uploaded_file_riscos:
+        try:
+            is_csv = uploaded_file_riscos.name.lower().endswith('.csv')
+            
+            if is_csv:
+                sheet_names = ["Arquivo CSV"]
+            else:
+                xl = pd.ExcelFile(uploaded_file_riscos)
+                sheet_names = [s for s in xl.sheet_names if "Legenda" not in s]
+            
+            st.sidebar.header("Filtros (Riscos)")
+            selected_sheet = st.sidebar.selectbox("Selecione o Setor (Aba):", sheet_names)
+            
+            months = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ']
+            selected_month = st.sidebar.selectbox("Selecione o Mês:", months)
+            
+            if st.sidebar.button("🔍 Buscar Riscos", key="btn_buscar_riscos"):
+                
+                if is_csv:
+                    uploaded_file_riscos.seek(0) 
+                    df_riscos = pd.read_csv(uploaded_file_riscos, header=None, sep=';', encoding='latin1')
+                else:
+                    df_riscos = pd.read_excel(uploaded_file_riscos, sheet_name=selected_sheet, header=None)
+                
+                target_risks = ['2A', '3A', '4A', '5A', '3B', '4B', '5B', '5C']
+                
+                month_idx = months.index(selected_month)
+                content_col_index = 8 + (month_idx * 2)
+                risk_col_index = content_col_index + 1
+                
+                results = []
+                
+                for index, row in df_riscos.iterrows():
+                    first_col = str(row[0])
+                    if pd.isna(row[0]) or first_col.strip() in [
+                        'FONTE', 'IDENTIFICAÇÃO DO RISCO', 'Identificação do Risco', 
+                        'Riscos Institucionais Gerenciados', 
+                        'Riscos Institucionais  não Gerenciados/Inventariados', 
+                        'C.H.O.R.C.'
+                    ]:
+                        continue
+                    
+                    if len(row) > risk_col_index:
+                        risk_value = str(row[risk_col_index]).strip().upper()
+                        
+                        if risk_value in target_risks:
+                            results.append({
+                                "Identificação do Risco": row[0],
+                                "Causa": row[1],
+                                f"Conteúdo ({selected_month})": row[content_col_index],
+                                "Classificação": risk_value
+                            })
+                
+                if results:
+                    st.success(f"Foram encontrados {len(results)} riscos com gravidade Alta/Muito Alta em {selected_sheet} no mês de {selected_month}.")
+                    df_results = pd.DataFrame(results)
+                    st.dataframe(df_results, use_container_width=True, hide_index=True)
+                else:
+                    st.info(f"Nenhum risco alto ou muito alto encontrado em {selected_sheet} para {selected_month}.")
+                    
+        except Exception as e:
+            st.error(f"Erro ao processar o arquivo: {e}")
+    else:
+        st.info("Por favor, carregue o arquivo Excel ou CSV na área acima para começar a análise de riscos.")
+
+# =========================================================
+# PÁGINA 3: ANÁLISE DE MEDICAMENTOS (NOVA)
+# =========================================================
+elif pagina_selecionada == "💊 Análise de Medicamentos":
+    st.header("Análise de Atrasos - Medicamentos")
+    st.markdown("Verifica células da **Coluna G** (pintadas de verde) e compara com a data de hoje para identificar atrasos na retirada.")
+
+    uploaded_file_med = st.file_uploader("📂 Carregue a planilha (.xlsx)", type=["xlsx"], key="upload_med")
+
+    if uploaded_file_med:
+        try:
+            wb = openpyxl.load_workbook(uploaded_file_med, data_only=True)
+            if 'CONTROLE' in wb.sheetnames:
+                ws = wb['CONTROLE']
+            else:
+                ws = wb.active
+                
+            hoje = datetime.now().date()
+            st.info(f"📅 **Data de Hoje:** {hoje.strftime('%d/%m/%Y')} | Aba analisada: {ws.title}")
+            
+            atrasados = []
+            debug_data = [] # Para armazenar infos do Raio-X
+            
+            # Iterar a partir da linha 8
+            for i, row in enumerate(ws.iter_rows(min_row=8, min_col=1, max_col=10), start=8):
+                cell_date = row[6] # Coluna G
+                cell_name = row[1] # Coluna B
+                cell_med = row[3]  # Coluna D
+                
+                # Pega valor da data
+                val_date = cell_date.value
+                parsed_date = parse_date(val_date)
+                
+                # Verifica cor
+                e_verde = is_green_smart(cell_date, wb)
+                
+                # Coleta dados para Debug
+                color_desc, _ = get_color_info(cell_date)
+                debug_data.append({
+                    "Linha Excel": i,
+                    "Paciente": cell_name.value,
+                    "Conteúdo Coluna G": str(val_date),
+                    "Data Entendida": parsed_date.strftime('%d/%m/%Y') if parsed_date else "Não detectada",
+                    "Cor Detectada": color_desc,
+                    "É Verde?": "SIM" if e_verde else "NÃO"
+                })
+                
+                # Lógica principal
+                if e_verde and parsed_date:
+                    if parsed_date < hoje:
+                        atrasados.append({
+                            "Linha": i,
+                            "Nome do Paciente": cell_name.value,
+                            "Medicamento": cell_med.value,
+                            "Data Prevista": parsed_date.strftime('%d/%m/%Y'),
+                            "Dias de Atraso": (hoje - parsed_date).days
+                        })
+
+            # --- Exibição dos Resultados ---
+            
+            if atrasados:
+                st.error(f"🚨 **{len(atrasados)} MEDICAMENTOS ATRASADOS ENCONTRADOS!**")
+                df_atrasados = pd.DataFrame(atrasados)
+                
+                # CORREÇÃO DO ERRO AQUI:
+                try:
+                    # Tenta aplicar o estilo com gradiente (requer matplotlib)
+                    st.dataframe(df_atrasados.style.background_gradient(cmap="Reds", subset=["Dias de Atraso"]), use_container_width=True)
+                except:
+                    # Se falhar (falta de matplotlib), mostra a tabela sem estilo
+                    st.warning("A biblioteca 'matplotlib' não foi encontrada. Exibindo tabela sem gradiente de cores.")
+                    st.dataframe(df_atrasados, use_container_width=True)
+                
+                # Botão Download
+                csv_atraso = df_atrasados.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    "📥 Baixar Relatório de Atrasados (CSV)",
+                    data=csv_atraso,
+                    file_name="medicamentos_atrasados.csv",
+                    mime="text/csv"
+                )
+            else:
+                st.success("✅ Nenhum atraso detectado nas células verdes.")
+                st.warning("⚠️ Se você vê uma célula verde atrasada e ela não apareceu, verifique o 'Modo Raio-X' abaixo.")
+
+            # --- Modo Raio-X (Debug) ---
+            with st.expander("🔍 MODO RAIO-X (Debug de cores)"):
+                st.write("Veja abaixo como o programa leu cada linha. Útil para verificar se a cor verde foi detectada corretamente.")
+                df_debug = pd.DataFrame(debug_data)
+                st.dataframe(df_debug)
+
+        except Exception as e:
+            st.error(f"Erro crítico ao processar o arquivo de medicamentos: {e}")
