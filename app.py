@@ -1,65 +1,6 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import openpyxl
-from datetime import datetime
-import re
-
-# ---------------------------------------------------------
-# FUNÇÕES AUXILIARES (PARA A ABA DE MEDICAMENTOS)
-# ---------------------------------------------------------
-def is_green(cell):
-    """
-    Verifica se a célula tem preenchimento verde.
-    A lógica verifica se o componente Verde (G) do RGB é predominante.
-    """
-    fill = cell.fill
-    if not fill or not fill.start_color:
-        return False
-    
-    color = fill.start_color
-    
-    # Verifica se é uma cor RGB definida
-    if color.type == 'rgb' and color.rgb:
-        hex_code = color.rgb
-        # Tratamento para ARGB (ex: FF00FF00) ou RGB (ex: 00FF00)
-        try:
-            if len(hex_code) == 8: # ARGB
-                r = int(hex_code[2:4], 16)
-                g = int(hex_code[4:6], 16)
-                b = int(hex_code[6:8], 16)
-            elif len(hex_code) == 6: # RGB
-                r = int(hex_code[0:2], 16)
-                g = int(hex_code[2:4], 16)
-                b = int(hex_code[4:6], 16)
-            else:
-                return False
-            
-            # Lógica simples: Verde deve ser maior que Vermelho e Azul, e ter uma intensidade mínima
-            return g > r and g > b and g > 50
-        except:
-            return False
-            
-    # Se for cor de tema (Theme), o openpyxl pode não trazer o RGB direto sem converter o tema.
-    return False
-
-def parse_date(value):
-    if isinstance(value, datetime):
-        return value.date()
-    
-    if isinstance(value, str):
-        # Tenta encontrar padrão dd/mm/aaaa ou dd/mm/aa na string (ex: "QT - 23/12/2025")
-        match = re.search(r'(\d{1,2})/(\d{1,2})/(\d{2,4})', value)
-        if match:
-            try:
-                d, m, y = int(match.group(1)), int(match.group(2)), int(match.group(3))
-                # Ajuste para ano com 2 dígitos
-                if y < 100:
-                    y += 2000
-                return datetime(y, m, d).date()
-            except:
-                pass
-    return None
 
 # ---------------------------------------------------------
 # CONFIGURAÇÃO GERAL DA PÁGINA
@@ -75,7 +16,7 @@ st.title("📊 Dashboard Integrado de Gestão")
 st.sidebar.title("Navegação")
 pagina_selecionada = st.sidebar.radio(
     "Ir para:",
-    ["📋 Análise de Coletas", "⚠️ Mapeamento de Riscos", "💊 Controle de Medicamentos"]
+    ["📋 Análise de Coletas", "⚠️ Mapeamento de Riscos"]
 )
 st.sidebar.markdown("---")
 
@@ -103,8 +44,9 @@ if pagina_selecionada == "📋 Análise de Coletas":
                 # Agrupa por Colaborador e conta O.S. únicas
                 resumo = df_coletas.groupby('Usuário Nome')['O.S.'].nunique().reset_index()
                 resumo.columns = ['Colaborador', 'Qtd. Pacientes Atendidos']
-                # Ordenação para o gráfico (crescente) e tabela (decrescente)
+                # Ordenação para o gráfico (crescente)
                 resumo_grafico = resumo.sort_values(by='Qtd. Pacientes Atendidos', ascending=True)
+                # Ordenação para a tabela (decrescente)
                 resumo_tabela = resumo.sort_values(by='Qtd. Pacientes Atendidos', ascending=False).reset_index(drop=True)
 
                 st.subheader("Resumo de Atendimentos")
@@ -112,22 +54,24 @@ if pagina_selecionada == "📋 Análise de Coletas":
                 
                 with col1:
                     st.write("**Tabela de Dados:**")
+                    # --- AJUSTES NA TABELA ---
                     st.dataframe(
                         resumo_tabela,
                         use_container_width=True,
-                        hide_index=True,
-                        height=500,
+                        hide_index=True,   # Remove o número da esquerda
+                        height=500,        # Aumenta a altura da tabela
                         column_config={
                             "Qtd. Pacientes Atendidos": st.column_config.NumberColumn(
                                 "Qtd. Pacientes",
                                 help="Número total de pacientes únicos atendidos",
-                                format="%d"
+                                format="%d" # Garante número inteiro
                             )
                         }
                     )
                     
                 with col2:
                     st.write("**Gráfico Visual:**")
+                    # --- AJUSTES NO GRÁFICO ---
                     fig = px.bar(
                         resumo_grafico, 
                         x='Qtd. Pacientes Atendidos', 
@@ -141,9 +85,10 @@ if pagina_selecionada == "📋 Análise de Coletas":
                         xaxis_title="Quantidade de Pacientes",
                         yaxis_title="Colaborador",
                         showlegend=False,
-                        height=500,
-                        margin=dict(r=50)
+                        height=500, # Aumentei a altura do gráfico também
+                        margin=dict(r=50) # Margem direita extra para o número não cortar
                     )
+                    # Garante que o texto fique visível mesmo se a barra for cheia
                     fig.update_traces(textposition='outside', cliponaxis=False)
                     
                     st.plotly_chart(fig, use_container_width=True)
@@ -167,7 +112,12 @@ if pagina_selecionada == "📋 Análise de Coletas":
                     df_detalhe_unico = df_detalhe_final.drop_duplicates(subset=['O.S.'])
 
                     st.write(f"**Pacientes atendidos por: {colaborador_selecionado}**")
-                    st.dataframe(df_detalhe_unico, use_container_width=True, hide_index=True)
+                    # Tabela de detalhes também sem index e maior
+                    st.dataframe(
+                        df_detalhe_unico, 
+                        use_container_width=True,
+                        hide_index=True
+                    )
                     
                     csv = df_detalhe_unico.to_csv(index=False).encode('utf-8')
                     st.download_button(
@@ -252,6 +202,7 @@ elif pagina_selecionada == "⚠️ Mapeamento de Riscos":
                 if results:
                     st.success(f"Foram encontrados {len(results)} riscos com gravidade Alta/Muito Alta em {selected_sheet} no mês de {selected_month}.")
                     df_results = pd.DataFrame(results)
+                    # Tabela de resultados de riscos também ajustada
                     st.dataframe(df_results, use_container_width=True, hide_index=True)
                 else:
                     st.info(f"Nenhum risco alto ou muito alto encontrado em {selected_sheet} para {selected_month}.")
@@ -260,88 +211,3 @@ elif pagina_selecionada == "⚠️ Mapeamento de Riscos":
             st.error(f"Erro ao processar o arquivo: {e}")
     else:
         st.info("Por favor, carregue o arquivo Excel ou CSV na área acima para começar a análise de riscos.")
-
-# =========================================================
-# PÁGINA 3: CONTROLE DE MEDICAMENTOS
-# =========================================================
-elif pagina_selecionada == "💊 Controle de Medicamentos":
-    st.header("Análise de Retirada de Medicamentos")
-    st.markdown("""
-    Esta ferramenta analisa o arquivo Excel de controle e identifica:
-    1. Células na **Coluna G** (a partir da linha 8) pintadas de **Verde**.
-    2. Verifica se a data nessas células está **atrasada** em relação ao dia de hoje.
-    """)
-
-    # Upload do Arquivo
-    uploaded_file_med = st.file_uploader("📂 Carregue sua planilha Excel (.xlsx) de Medicamentos", type=["xlsx"], key="upload_med")
-
-    if uploaded_file_med:
-        try:
-            # Carregar o workbook com openpyxl para acessar cores
-            wb = openpyxl.load_workbook(uploaded_file_med, data_only=True)
-            
-            # Tenta pegar a aba ativa ou a aba 'CONTROLE' se existir
-            if 'CONTROLE' in wb.sheetnames:
-                ws = wb['CONTROLE']
-            else:
-                ws = wb.active
-                
-            st.info(f"Analisando a aba: **{ws.title}**")
-            
-            # Data de hoje
-            hoje = datetime.now().date()
-            st.write(f"📅 **Data da Análise:** {hoje.strftime('%d/%m/%Y')}")
-            
-            atrasados = []
-            
-            # Iterar sobre as linhas a partir da linha 8
-            # Coluna G é a 7ª coluna (índice 6)
-            for row in ws.iter_rows(min_row=8, min_col=1, max_col=10):
-                cell_date = row[6] # Coluna G (índice 6 base 0)
-                cell_name = row[1] # Coluna B (Nome Cliente)
-                cell_med = row[3]  # Coluna D (Medicamento)
-                
-                # Verifica a cor
-                if is_green(cell_date):
-                    data_retirada = parse_date(cell_date.value)
-                    
-                    if data_retirada:
-                        # Verifica se está atrasado (Data Retirada < Hoje)
-                        if data_retirada < hoje:
-                            atrasados.append({
-                                "Nome do Paciente": cell_name.value,
-                                "Medicamento": cell_med.value,
-                                "Data Prevista": data_retirada.strftime('%d/%m/%Y'),
-                                "Dias de Atraso": (hoje - data_retirada).days
-                            })
-            
-            # Resultados
-            if atrasados:
-                df_atrasados = pd.DataFrame(atrasados)
-                
-                st.error(f"🚨 Foram encontrados **{len(df_atrasados)}** medicamentos atrasados para retirada!")
-                
-                # Exibir tabela com gradiente
-                st.dataframe(
-                    df_atrasados.style.background_gradient(cmap="Reds", subset=["Dias de Atraso"]),
-                    use_container_width=True,
-                    hide_index=True
-                )
-                
-                # Opção de download
-                csv = df_atrasados.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    label="📥 Baixar Relatório de Atrasados (CSV)",
-                    data=csv,
-                    file_name="medicamentos_atrasados.csv",
-                    mime="text/csv"
-                )
-                
-            else:
-                st.success("✅ Nenhum medicamento disponível (verde) está atrasado para retirada hoje!")
-                
-        except Exception as e:
-            st.error(f"Ocorreu um erro ao processar o arquivo: {e}")
-            st.warning("Certifique-se de que o arquivo é um Excel (.xlsx) válido e não está corrompido.")
-    else:
-        st.info("Por favor, carregue o arquivo Excel na área acima.")
