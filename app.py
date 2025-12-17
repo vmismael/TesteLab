@@ -21,12 +21,17 @@ if uploaded_pix and uploaded_bb:
     
     # --- Processamento do Arquivo Pix ---
     try:
-        # Lê o arquivo. Assume-se que não tem cabeçalho padrão
-        df_pix = pd.read_csv(uploaded_pix, header=None)
+        # Tenta ler como UTF-8 (padrão)
+        try:
+            df_pix = pd.read_csv(uploaded_pix, header=None)
+        except UnicodeDecodeError:
+            # Se der erro de encoding, volta o arquivo pro início e tenta ler como Latin-1 (Excel Padrão)
+            uploaded_pix.seek(0)
+            df_pix = pd.read_csv(uploaded_pix, header=None, encoding='latin1')
         
         # A planilha parece ter duas listas lado a lado (Colunas D e I, índices 3 e 8)
         # Vamos pegar valores da coluna D (index 3)
-        # Regra: Ignorar linhas onde a coluna de hora (index 2) contém "Total"
+        # Regra: Ignorar linhas onde a coluna de hora (index 2) contém "Total" ou é vazia
         vals_1 = []
         if len(df_pix.columns) > 3:
             col_d = df_pix[[2, 3]].dropna()
@@ -57,17 +62,22 @@ if uploaded_pix and uploaded_bb:
         
         # Regra: Coluna J (index 9) deve conter "Pix-Recebido QR Code"
         # Regra: Pegar valor da Coluna K (index 10)
-        mask = df_bb[9].astype(str).str.contains("Pix-Recebido QR Code", case=False, na=False)
-        df_bb_filtered = df_bb[mask]
-        
-        bb_values = []
-        for val in df_bb_filtered[10]:
-            if isinstance(val, str):
-                # Converte "1.200,50" para float
-                val = val.replace('.', '').replace(',', '.')
-            bb_values.append(float(val))
+        # Verifica se a coluna 9 existe antes de filtrar
+        if 9 in df_bb.columns and 10 in df_bb.columns:
+            mask = df_bb[9].astype(str).str.contains("Pix-Recebido QR Code", case=False, na=False)
+            df_bb_filtered = df_bb[mask]
             
-        st.success(f"Extrato BB processado: {len(bb_values)} lançamentos de QR Code encontrados.")
+            bb_values = []
+            for val in df_bb_filtered[10]:
+                if isinstance(val, str):
+                    # Converte "1.200,50" para float
+                    val = val.replace('.', '').replace(',', '.')
+                bb_values.append(float(val))
+                
+            st.success(f"Extrato BB processado: {len(bb_values)} lançamentos de QR Code encontrados.")
+        else:
+            st.error("O arquivo do Banco não tem as colunas esperadas (J e K). Verifique o formato.")
+            st.stop()
         
     except Exception as e:
         st.error(f"Erro ao ler Extrato BB: {e}")
@@ -115,7 +125,8 @@ if uploaded_pix and uploaded_bb:
         st.write("### ⚠️ Faltam no Extrato BB (Estão na Planilha)")
         if missing_in_bb:
             df_missing = pd.DataFrame(missing_in_bb, columns=["Valor"])
-            st.dataframe(df_missing, height=300)
+            # Formatação para moeda
+            st.dataframe(df_missing.style.format("{:.2f}"), height=300)
         else:
             st.info("Nenhum valor faltando no banco.")
             
@@ -123,6 +134,6 @@ if uploaded_pix and uploaded_bb:
         st.write("### ❓ Extras no Extrato BB (Não estão na Planilha)")
         if extra_in_bb:
             df_extra = pd.DataFrame(extra_in_bb, columns=["Valor"])
-            st.dataframe(df_extra, height=300)
+            st.dataframe(df_extra.style.format("{:.2f}"), height=300)
         else:
             st.success("Nenhum valor extra inesperado no banco.")
