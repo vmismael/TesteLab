@@ -107,10 +107,21 @@ if pagina_selecionada == "📋 Análise de Coletas":
                 df_coletas = pd.read_csv(uploaded_file_coletas, sep=";", encoding='latin1')
             
             if 'Usuário Nome' in df_coletas.columns and 'O.S.' in df_coletas.columns:
+                # Agrupamento inicial
                 resumo = df_coletas.groupby('Usuário Nome')['O.S.'].nunique().reset_index()
                 resumo.columns = ['Colaborador', 'Qtd. Pacientes Atendidos']
+                
+                # Dados para o Gráfico (sem o total para não distorcer)
                 resumo_grafico = resumo.sort_values(by='Qtd. Pacientes Atendidos', ascending=True)
+                
+                # Dados para a Tabela (calculando e adicionando o TOTAL)
                 resumo_tabela = resumo.sort_values(by='Qtd. Pacientes Atendidos', ascending=False).reset_index(drop=True)
+                
+                # --- ADIÇÃO DO TOTAL AQUI ---
+                total_atendimentos = resumo_tabela['Qtd. Pacientes Atendidos'].sum()
+                df_total = pd.DataFrame([['TOTAL', total_atendimentos]], columns=['Colaborador', 'Qtd. Pacientes Atendidos'])
+                resumo_tabela = pd.concat([resumo_tabela, df_total], ignore_index=True)
+                # ----------------------------
 
                 st.subheader("Resumo de Atendimentos")
                 col1, col2 = st.columns([1, 2])
@@ -157,7 +168,8 @@ if pagina_selecionada == "📋 Análise de Coletas":
                 st.subheader("🔎 Detalhes por Colaborador")
                 st.info("Selecione um colaborador abaixo para ver a lista detalhada.")
 
-                lista_colaboradores = resumo_tabela['Colaborador'].unique()
+                # Filtra a lista para não mostrar a linha "TOTAL" no selectbox
+                lista_colaboradores = resumo_tabela[resumo_tabela['Colaborador'] != 'TOTAL']['Colaborador'].unique()
                 colaborador_selecionado = st.selectbox("Escolha o Colaborador:", lista_colaboradores)
 
                 if colaborador_selecionado:
