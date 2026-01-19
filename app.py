@@ -76,7 +76,7 @@ def parse_date(value):
 # ---------------------------------------------------------
 st.set_page_config(page_title="Dashboard Integrado", layout="wide")
 
-st.title("📊 Dashboard Integrado de Gestão")
+st.title("Hematológica Prestação de Serviços Médicos Ltda.")
 
 # ---------------------------------------------------------
 # MENU DE NAVEGAÇÃO LATERAL
