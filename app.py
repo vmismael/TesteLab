@@ -39,7 +39,6 @@ def is_green_smart(cell, wb):
     if color.type == 'rgb':
         hex_code = color.rgb 
     elif color.type == 'theme':
-        # Temas comuns de verde/azul (Estimativa para temas do Excel)
         if color.theme in [5, 6, 9]: 
             return True 
         return False
@@ -75,7 +74,7 @@ def parse_date(value):
 # ---------------------------------------------------------
 # CONFIGURAÇÃO GERAL DA PÁGINA
 # ---------------------------------------------------------
-st.set_page_config(page_title="Dashboard Integrado", layout="wide")
+st.set_page_config(page_title="Laboratório Paulista", layout="wide")
 
 st.title("📊 Dashboard Integrado de Gestão")
 
@@ -89,7 +88,7 @@ pagina_selecionada = st.sidebar.radio(
         "📋 Análise de Coletas", 
         "⚠️ Mapeamento de Riscos", 
         "💊 Análise de Medicamentos",
-        "📂 Organizador de Notas"  # Nova aba adicionada aqui
+        "📂 Organizador de Notas"
     ]
 )
 st.sidebar.markdown("---")
@@ -112,21 +111,15 @@ if pagina_selecionada == "📋 Análise de Coletas":
                 df_coletas = pd.read_csv(uploaded_file_coletas, sep=";", encoding='latin1')
             
             if 'Usuário Nome' in df_coletas.columns and 'O.S.' in df_coletas.columns:
-                # Agrupamento inicial
                 resumo = df_coletas.groupby('Usuário Nome')['O.S.'].nunique().reset_index()
                 resumo.columns = ['Colaborador', 'Qtd. Pacientes Atendidos']
                 
-                # Dados para o Gráfico (sem o total para não distorcer)
                 resumo_grafico = resumo.sort_values(by='Qtd. Pacientes Atendidos', ascending=True)
-                
-                # Dados para a Tabela (calculando e adicionando o TOTAL)
                 resumo_tabela = resumo.sort_values(by='Qtd. Pacientes Atendidos', ascending=False).reset_index(drop=True)
                 
-                # --- ADIÇÃO DO TOTAL AQUI ---
                 total_atendimentos = resumo_tabela['Qtd. Pacientes Atendidos'].sum()
                 df_total = pd.DataFrame([['TOTAL', total_atendimentos]], columns=['Colaborador', 'Qtd. Pacientes Atendidos'])
                 resumo_tabela = pd.concat([resumo_tabela, df_total], ignore_index=True)
-                # ----------------------------
 
                 st.subheader("Resumo de Atendimentos")
                 col1, col2 = st.columns([1, 2])
@@ -173,7 +166,6 @@ if pagina_selecionada == "📋 Análise de Coletas":
                 st.subheader("🔎 Detalhes por Colaborador")
                 st.info("Selecione um colaborador abaixo para ver a lista detalhada.")
 
-                # Filtra a lista para não mostrar a linha "TOTAL" no selectbox
                 lista_colaboradores = resumo_tabela[resumo_tabela['Colaborador'] != 'TOTAL']['Colaborador'].unique()
                 colaborador_selecionado = st.selectbox("Escolha o Colaborador:", lista_colaboradores)
 
@@ -306,22 +298,18 @@ elif pagina_selecionada == "💊 Análise de Medicamentos":
             st.info(f"📅 **Data de Hoje:** {hoje.strftime('%d/%m/%Y')} | Aba analisada: {ws.title}")
             
             atrasados = []
-            debug_data = [] # Para armazenar infos do Raio-X
+            debug_data = [] 
             
-            # Iterar a partir da linha 8
             for i, row in enumerate(ws.iter_rows(min_row=8, min_col=1, max_col=10), start=8):
-                cell_date = row[6] # Coluna G
-                cell_name = row[1] # Coluna B
-                cell_med = row[3]  # Coluna D
+                cell_date = row[6] 
+                cell_name = row[1] 
+                cell_med = row[3]  
                 
-                # Pega valor da data
                 val_date = cell_date.value
                 parsed_date = parse_date(val_date)
                 
-                # Verifica cor
                 e_verde = is_green_smart(cell_date, wb)
                 
-                # Coleta dados para Debug
                 color_desc, _ = get_color_info(cell_date)
                 debug_data.append({
                     "Linha Excel": i,
@@ -332,7 +320,6 @@ elif pagina_selecionada == "💊 Análise de Medicamentos":
                     "É Verde?": "SIM" if e_verde else "NÃO"
                 })
                 
-                # Lógica principal
                 if e_verde and parsed_date:
                     if parsed_date < hoje:
                         atrasados.append({
@@ -343,21 +330,16 @@ elif pagina_selecionada == "💊 Análise de Medicamentos":
                             "Dias de Atraso": (hoje - parsed_date).days
                         })
 
-            # --- Exibição dos Resultados ---
-            
             if atrasados:
                 st.error(f"🚨 **{len(atrasados)} MEDICAMENTOS ATRASADOS ENCONTRADOS!**")
                 df_atrasados = pd.DataFrame(atrasados)
                 
                 try:
-                    # Tenta aplicar o estilo com gradiente (requer matplotlib)
                     st.dataframe(df_atrasados.style.background_gradient(cmap="Reds", subset=["Dias de Atraso"]), use_container_width=True)
                 except:
-                    # Se falhar (falta de matplotlib), mostra a tabela sem estilo
                     st.warning("A biblioteca 'matplotlib' não foi encontrada. Exibindo tabela sem gradiente de cores.")
                     st.dataframe(df_atrasados, use_container_width=True)
                 
-                # Botão Download
                 csv_atraso = df_atrasados.to_csv(index=False).encode('utf-8')
                 st.download_button(
                     "📥 Baixar Relatório de Atrasados (CSV)",
@@ -369,7 +351,6 @@ elif pagina_selecionada == "💊 Análise de Medicamentos":
                 st.success("✅ Nenhum atraso detectado nas células verdes.")
                 st.warning("⚠️ Se você vê uma célula verde atrasada e ela não apareceu, verifique o 'Modo Raio-X' abaixo.")
 
-            # --- Modo Raio-X (Debug) ---
             with st.expander("🔍 MODO RAIO-X (Debug de cores)"):
                 st.write("Veja abaixo como o programa leu cada linha. Útil para verificar se a cor verde foi detectada corretamente.")
                 df_debug = pd.DataFrame(debug_data)
@@ -379,12 +360,11 @@ elif pagina_selecionada == "💊 Análise de Medicamentos":
             st.error(f"Erro crítico ao processar o arquivo de medicamentos: {e}")
 
 # =========================================================
-# PÁGINA 4: ORGANIZADOR DE NOTAS (NOVA)
+# PÁGINA 4: ORGANIZADOR DE NOTAS (ATUALIZADA)
 # =========================================================
 elif pagina_selecionada == "📂 Organizador de Notas":
     st.header("Organizador de Notas e Arquivos")
     
-    # Upload de arquivos
     uploaded_files_notas = st.file_uploader(
         "Solte as notas em pdf aqui", 
         accept_multiple_files=True, 
@@ -393,55 +373,73 @@ elif pagina_selecionada == "📂 Organizador de Notas":
     )
 
     if uploaded_files_notas:
-        # Estrutura: { 'MEDSELF': ['14765', '14766'], 'SINAM': ['14756'] }
         agrupamento = {}
         total_processados = 0
+        arquivos_nao_lidos = []
 
-        # Barra de progresso
         barra_progresso = st.progress(0)
         
         for i, arquivo in enumerate(uploaded_files_notas):
             nome_arquivo = arquivo.name
             
-            # Procura padrão: C [NUMERO] - [NOME].pdf
-            match = re.search(r"C\s+(\d+)\s+-\s+(.+)\.pdf", nome_arquivo, re.IGNORECASE)
+            # --- LÓGICA DE DETECÇÃO FLEXÍVEL ---
+            numero = None
+            nome = None
+            
+            # TENTATIVA 1: Padrão "C 14756 - SINAM.pdf" (Começa com C, depois numero, depois nome)
+            match1 = re.search(r"^C\s+(\d+)\s+[-]\s+(.+)\.pdf", nome_arquivo, re.IGNORECASE)
+            
+            # TENTATIVA 2: Padrão "NOME - 14811.pdf" ou "NOME - 14811 - EXTRA.pdf"
+            # Procura qualquer texto no inicio, um traço, e depois numeros
+            match2 = re.search(r"^(.+?)\s*[-]\s*(\d+)", nome_arquivo, re.IGNORECASE)
 
-            if match:
-                numero = match.group(1)
-                nome = match.group(2).upper().strip() # Padroniza para maiúsculo
+            if match1:
+                # No padrão 1, o numero vem primeiro (grupo 1) e o nome depois (grupo 2)
+                numero = match1.group(1)
+                nome = match1.group(2).upper().strip()
+            elif match2:
+                # No padrão 2, o nome vem primeiro (grupo 1) e o numero depois (grupo 2)
+                nome = match2.group(1).upper().strip()
+                numero = match2.group(2)
+            
+            # -----------------------------------
 
+            if nome and numero:
                 if nome not in agrupamento:
                     agrupamento[nome] = []
                 agrupamento[nome].append(numero)
                 total_processados += 1
+            else:
+                arquivos_nao_lidos.append(nome_arquivo)
             
-            # Atualiza a barra de progresso
             barra_progresso.progress((i + 1) / len(uploaded_files_notas))
 
-        # Limpa a barra de progresso ao terminar
         barra_progresso.empty()
 
         st.success(f"Processamento concluído! {total_processados} arquivos identificados.")
+        
+        if arquivos_nao_lidos:
+            with st.expander(f"⚠️ {len(arquivos_nao_lidos)} arquivos não foram reconhecidos (Ver lista)"):
+                st.write("Estes arquivos não seguiram nem o padrão 'C Num - Nome' nem 'Nome - Num':")
+                for arq in arquivos_nao_lidos:
+                    st.write(f"- {arq}")
+
         st.write("---")
 
-        # Exibe os resultados
         if agrupamento:
             col1, col2 = st.columns([1, 2])
             
             with col1:
                 st.subheader("Resumo")
-                # Mostra apenas os totais primeiro
                 for empresa, lista in agrupamento.items():
                     st.write(f"**{empresa}**: {len(lista)} arquivos")
 
             with col2:
                 st.subheader("Detalhes (Números)")
-                # Cria expansores para cada empresa
                 for empresa, lista_numeros in agrupamento.items():
                     with st.expander(f"Ver números da {empresa} ({len(lista_numeros)})"):
-                        # Junta todos os números separados por vírgula para fácil cópia
                         texto_copia = ", ".join(lista_numeros)
                         st.code(texto_copia, language="text")
 
         else:
-            st.warning("Nenhum arquivo com o padrão 'C Numero - Nome.pdf' foi encontrado.")
+            st.warning("Nenhum arquivo compatível foi encontrado.")
