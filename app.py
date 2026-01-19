@@ -85,7 +85,12 @@ st.title("📊 Dashboard Integrado de Gestão")
 st.sidebar.title("Navegação")
 pagina_selecionada = st.sidebar.radio(
     "Ir para:",
-    ["📋 Análise de Coletas", "⚠️ Mapeamento de Riscos", "💊 Análise de Medicamentos"]
+    [
+        "📋 Análise de Coletas", 
+        "⚠️ Mapeamento de Riscos", 
+        "💊 Análise de Medicamentos",
+        "📂 Organizador de Notas"  # Nova aba adicionada aqui
+    ]
 )
 st.sidebar.markdown("---")
 
@@ -281,7 +286,7 @@ elif pagina_selecionada == "⚠️ Mapeamento de Riscos":
         st.info("Por favor, carregue o arquivo Excel ou CSV na área acima para começar a análise de riscos.")
 
 # =========================================================
-# PÁGINA 3: ANÁLISE DE MEDICAMENTOS (NOVA)
+# PÁGINA 3: ANÁLISE DE MEDICAMENTOS
 # =========================================================
 elif pagina_selecionada == "💊 Análise de Medicamentos":
     st.header("Análise de Atrasos - Medicamentos")
@@ -344,7 +349,6 @@ elif pagina_selecionada == "💊 Análise de Medicamentos":
                 st.error(f"🚨 **{len(atrasados)} MEDICAMENTOS ATRASADOS ENCONTRADOS!**")
                 df_atrasados = pd.DataFrame(atrasados)
                 
-                # CORREÇÃO DO ERRO AQUI:
                 try:
                     # Tenta aplicar o estilo com gradiente (requer matplotlib)
                     st.dataframe(df_atrasados.style.background_gradient(cmap="Reds", subset=["Dias de Atraso"]), use_container_width=True)
@@ -373,3 +377,71 @@ elif pagina_selecionada == "💊 Análise de Medicamentos":
 
         except Exception as e:
             st.error(f"Erro crítico ao processar o arquivo de medicamentos: {e}")
+
+# =========================================================
+# PÁGINA 4: ORGANIZADOR DE NOTAS (NOVA)
+# =========================================================
+elif pagina_selecionada == "📂 Organizador de Notas":
+    st.header("Organizador de Notas e Arquivos")
+    
+    # Upload de arquivos
+    uploaded_files_notas = st.file_uploader(
+        "Solte as notas em pdf aqui", 
+        accept_multiple_files=True, 
+        type=['pdf'],
+        key="upload_notas"
+    )
+
+    if uploaded_files_notas:
+        # Estrutura: { 'MEDSELF': ['14765', '14766'], 'SINAM': ['14756'] }
+        agrupamento = {}
+        total_processados = 0
+
+        # Barra de progresso
+        barra_progresso = st.progress(0)
+        
+        for i, arquivo in enumerate(uploaded_files_notas):
+            nome_arquivo = arquivo.name
+            
+            # Procura padrão: C [NUMERO] - [NOME].pdf
+            match = re.search(r"C\s+(\d+)\s+-\s+(.+)\.pdf", nome_arquivo, re.IGNORECASE)
+
+            if match:
+                numero = match.group(1)
+                nome = match.group(2).upper().strip() # Padroniza para maiúsculo
+
+                if nome not in agrupamento:
+                    agrupamento[nome] = []
+                agrupamento[nome].append(numero)
+                total_processados += 1
+            
+            # Atualiza a barra de progresso
+            barra_progresso.progress((i + 1) / len(uploaded_files_notas))
+
+        # Limpa a barra de progresso ao terminar
+        barra_progresso.empty()
+
+        st.success(f"Processamento concluído! {total_processados} arquivos identificados.")
+        st.write("---")
+
+        # Exibe os resultados
+        if agrupamento:
+            col1, col2 = st.columns([1, 2])
+            
+            with col1:
+                st.subheader("Resumo")
+                # Mostra apenas os totais primeiro
+                for empresa, lista in agrupamento.items():
+                    st.write(f"**{empresa}**: {len(lista)} arquivos")
+
+            with col2:
+                st.subheader("Detalhes (Números)")
+                # Cria expansores para cada empresa
+                for empresa, lista_numeros in agrupamento.items():
+                    with st.expander(f"Ver números da {empresa} ({len(lista_numeros)})"):
+                        # Junta todos os números separados por vírgula para fácil cópia
+                        texto_copia = ", ".join(lista_numeros)
+                        st.code(texto_copia, language="text")
+
+        else:
+            st.warning("Nenhum arquivo com o padrão 'C Numero - Nome.pdf' foi encontrado.")
