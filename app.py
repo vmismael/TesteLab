@@ -74,7 +74,7 @@ def parse_date(value):
 # ---------------------------------------------------------
 # CONFIGURAÇÃO GERAL DA PÁGINA
 # ---------------------------------------------------------
-st.set_page_config(page_title="Laboratório Paulista", layout="wide")
+st.set_page_config(page_title="Dashboard Integrado", layout="wide")
 
 st.title("📊 Dashboard Integrado de Gestão")
 
@@ -360,7 +360,7 @@ elif pagina_selecionada == "💊 Análise de Medicamentos":
             st.error(f"Erro crítico ao processar o arquivo de medicamentos: {e}")
 
 # =========================================================
-# PÁGINA 4: ORGANIZADOR DE NOTAS (ATUALIZADA)
+# PÁGINA 4: ORGANIZADOR DE NOTAS (CORRIGIDA)
 # =========================================================
 elif pagina_selecionada == "📂 Organizador de Notas":
     st.header("Organizador de Notas e Arquivos")
@@ -386,11 +386,11 @@ elif pagina_selecionada == "📂 Organizador de Notas":
             numero = None
             nome = None
             
-            # TENTATIVA 1: Padrão "C 14756 - SINAM.pdf" (Começa com C, depois numero, depois nome)
-            match1 = re.search(r"^C\s+(\d+)\s+[-]\s+(.+)\.pdf", nome_arquivo, re.IGNORECASE)
+            # TENTATIVA 1: Padrão "C 14756 - SINAM.pdf" (Com ou sem espaços no traço)
+            # \s* significa "zero ou mais espaços"
+            match1 = re.search(r"^C\s+(\d+)\s*[-]\s*(.+)\.pdf", nome_arquivo, re.IGNORECASE)
             
-            # TENTATIVA 2: Padrão "NOME - 14811.pdf" ou "NOME - 14811 - EXTRA.pdf"
-            # Procura qualquer texto no inicio, um traço, e depois numeros
+            # TENTATIVA 2: Padrão "NOME - 14811.pdf" (Com ou sem espaços no traço)
             match2 = re.search(r"^(.+?)\s*[-]\s*(\d+)", nome_arquivo, re.IGNORECASE)
 
             if match1:
