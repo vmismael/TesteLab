@@ -60,12 +60,16 @@ if uploaded_file is not None:
             col_obs = data_info['coluna_obs']
             
             # FILTRAGEM: Pegar apenas quem respondeu "Sim"
+            # O filtro procura por qualquer resposta que comece com "Sim" (ignorando maiúsculas/minúsculas)
             df_filtered = df[df[col_contato].astype(str).str.contains(r"^Sim", case=False, na=False)]
             
+            # Contagem de avaliadores
             qtd_avaliadores = len(df_filtered)
             
+            # Exibir métrica de quantidade de avaliadores com destaque
+            st.metric(label="👥 Pessoas que avaliaram este colaborador", value=qtd_avaliadores)
+            
             if qtd_avaliadores > 0:
-                st.write(f"**Total de avaliações consideradas:** {qtd_avaliadores}")
                 st.divider()
 
                 # --- CÁLCULO DAS MÉDIAS ---
@@ -86,8 +90,7 @@ if uploaded_file is not None:
                 df_medias = pd.DataFrame(list(medias.items()), columns=['Critério', 'Média'])
                 df_medias = df_medias.set_index('Critério')
                 
-                # Exibir apenas a Tabela (ocupando a largura necessária)
-                # use_container_width=True faz a tabela se ajustar bem à tela
+                # Exibir apenas a Tabela
                 st.dataframe(df_medias.style.format("{:.2f}"), use_container_width=True)
 
                 st.divider()
@@ -100,7 +103,8 @@ if uploaded_file is not None:
                     
                     if not observacoes.empty:
                         for i, obs in enumerate(observacoes):
-                            st.info(f"**Observação {i+1}:** {obs}")
+                            with st.container():
+                                st.info(f"**Observação {i+1}:** {obs}")
                     else:
                         st.write("Nenhuma observação registrada para este colaborador.")
                 else:
