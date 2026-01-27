@@ -6,14 +6,19 @@ import re
 st.set_page_config(page_title="Análise de Desempenho", layout="wide")
 
 st.title("📊 Painel de Análise de Desempenho")
-st.markdown("Faça o upload do arquivo CSV para visualizar as médias e observações por colaborador.")
+st.markdown("Faça o upload do arquivo (Excel ou CSV) para visualizar as médias e observações por colaborador.")
 
-# Upload do arquivo
-uploaded_file = st.file_uploader("Carregue o arquivo CSV aqui", type=["csv"])
+# ATUALIZAÇÃO: Agora aceita 'xlsx' além de 'csv'
+uploaded_file = st.file_uploader("Carregue o arquivo aqui", type=["csv", "xlsx"])
 
 if uploaded_file is not None:
     try:
-        df = pd.read_csv(uploaded_file)
+        # ATUALIZAÇÃO: Verifica a extensão para usar o leitor correto
+        if uploaded_file.name.endswith('.csv'):
+            df = pd.read_csv(uploaded_file)
+        else:
+            # Lê arquivos Excel
+            df = pd.read_excel(uploaded_file)
         
         # Dicionário para armazenar a estrutura dos dados:
         # { 'Nome do Colaborador': {'coluna_contato': str, 'colunas_notas': list, 'coluna_obs': str} }
@@ -24,6 +29,7 @@ if uploaded_file is not None:
         # Iterar sobre todas as colunas para mapear a estrutura dinamicamente
         for col in df.columns:
             # 1. Identificar o início de um novo colaborador (Coluna de "Sim/Não")
+            # O texto exato pode variar ligeiramente, então procuramos por palavras-chave
             if "Você tem contato suficiente com o(a) colaborador(a)" in col:
                 # Extrair o nome usando Regex
                 match = re.search(r"colaborador\(a\) (.+?) para", col)
@@ -36,7 +42,7 @@ if uploaded_file is not None:
                     }
             
             # 2. Identificar a coluna de Observações (Fim da seção do colaborador atual)
-            elif current_collaborator and col.strip().startswith("Observações:"):
+            elif current_collaborator and str(col).strip().startswith("Observações:"):
                 collaborators_data[current_collaborator]['coluna_obs'] = col
                 current_collaborator = None # Fecha o ciclo deste colaborador
             
@@ -57,7 +63,7 @@ if uploaded_file is not None:
             col_obs = data_info['coluna_obs']
             
             # FILTRAGEM: Pegar apenas quem respondeu "Sim"
-            # O filtro procura por qualquer resposta que comece com "Sim" (ignorando maiúsculas/minúsculas)
+            # O filtro procura por qualquer resposta que comece com "Sim"
             df_filtered = df[df[col_contato].astype(str).str.contains(r"^Sim", case=False, na=False)]
             
             qtd_avaliadores = len(df_filtered)
@@ -72,11 +78,12 @@ if uploaded_file is not None:
                 # Converter colunas de notas para numérico (para garantir) e calcular média
                 medias = {}
                 for col in cols_notas:
-                    # Limpar o nome da coluna (remover sufixos numéricos que o Excel/CSV cria, ex: "Carisma 2" -> "Carisma")
+                    # Limpar o nome da coluna para o gráfico (remove números no final se houver duplicatas)
                     clean_name = re.sub(r'\s+\d+$', '', col).strip() 
-                    # Extrair apenas o texto descritivo (remove "1. ", "2. ", etc se desejar, mas mantive para referência)
-                    
-                    # Forçar conversão para números, erros viram NaN (não contam na média)
+                    # Tenta remover o prefixo numérico (ex: "1. Capacidade..." vira "Capacidade...") para limpar o visual
+                    clean_name = re.sub(r'^\d+\.\s*', '', clean_name)
+
+                    # Forçar conversão para números, erros viram NaN
                     numeric_series = pd.to_numeric(df_filtered[col], errors='coerce')
                     media_val = numeric_series.mean()
                     medias[clean_name] = media_val
@@ -85,11 +92,10 @@ if uploaded_file is not None:
                 df_medias = pd.DataFrame(list(medias.items()), columns=['Critério', 'Média'])
                 df_medias = df_medias.set_index('Critério')
                 
-                # Exibir Tabela colorida e Gráfico
+                # Exibir Tabela e Gráfico
                 col1, col2 = st.columns([1, 2])
                 
                 with col1:
-                    # Formatar para mostrar 2 casas decimais
                     st.dataframe(df_medias.style.format("{:.2f}"))
                 
                 with col2:
@@ -113,10 +119,10 @@ if uploaded_file is not None:
                     st.warning("Coluna de observações não encontrada para este colaborador.")
 
             else:
-                st.warning("Nenhum avaliador respondeu que tem contato suficiente com este colaborador (ou não há dados marcados com 'Sim').")
+                st.warning("Nenhum avaliador respondeu que tem contato suficiente com este colaborador.")
         
         else:
-            st.error("Não foi possível identificar colaboradores no arquivo. Verifique se as colunas contêm 'Você tem contato suficiente com o(a) colaborador(a)'.")
+            st.error("Não foi possível identificar colaboradores automaticamente. Verifique se as colunas do Excel contêm a frase: 'Você tem contato suficiente com o(a) colaborador(a)'.")
 
     except Exception as e:
         st.error(f"Erro ao processar o arquivo: {e}")
